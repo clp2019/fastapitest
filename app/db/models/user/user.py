@@ -2,6 +2,9 @@ import uuid
 from sqlalchemy import Column, String, DateTime, func
 from sqlalchemy.dialects.postgresql import UUID
 from app.db.base import Base
+from sqlalchemy.ext.declarative import declarative_base
+
+
 
 class User(Base):
     __tablename__ = "users"
