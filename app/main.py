@@ -1,3 +1,4 @@
+from app.db.models.user import user  # 确保 User 模型被加载
 from app.db.base import Base
 from app.db.session import engine
 from fastapi import FastAPI
