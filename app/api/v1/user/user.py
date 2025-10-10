@@ -79,7 +79,11 @@ Hi,
 
 @router.post("/reset-password")
 async def reset_password(data: ResetPassword, db: AsyncSession = Depends(get_db)):
-    # 1. 验证 token
+    import re
+    from sqlalchemy import select
+    from datetime import datetime
+
+    # 1️⃣ 验证 token
     payload = verify_password_reset_token(data.token)
     if not payload:
         raise HTTPException(status_code=400, detail="Invalid or expired token")
@@ -91,34 +95,40 @@ async def reset_password(data: ResetPassword, db: AsyncSession = Depends(get_db)
     if not token_record:
         raise HTTPException(status_code=400, detail="Invalid or expired token")
 
-    # 2. 检查失败次数
+    # 2️⃣ 检查失败次数
     if token_record.failed_attempts >= 3:
-        # 删除 token
         await db.delete(token_record)
         await db.commit()
         raise HTTPException(status_code=400, detail="Link invalid: too many failed attempts")
 
-    # 3. 检查是否过期
+    # 3️⃣ 检查是否过期
     if datetime.utcnow() > token_record.expires_at:
         await db.delete(token_record)
         await db.commit()
         raise HTTPException(status_code=400, detail="Link expired")
 
-    # 4. 更新密码（假设 data.new_password 有效）
-    if len(data.new_password) < 8:
-        # 密码太短 -> 失败次数 +1
+    # 4️⃣ 检查密码格式
+    password_pattern = re.compile(r"^[A-Za-z]+\d+[A-Za-z]+$")
+    if not password_pattern.match(data.new_password) or len(data.new_password) < 8 or len(data.new_password) > 20:
         token_record.failed_attempts += 1
         await db.commit()
-        raise HTTPException(status_code=400, detail="Password too short")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Password invalid: must be letter+digit+letter, 8-20 chars. Failed attempts: {token_record.failed_attempts}"
+        )
 
-    # 设置新密码
-    user_id = payload.get("sub")
+    # 5️⃣ 更新用户密码
+    user_id = payload if isinstance(payload, str) else payload.get("sub")
     user = await db.get(User, int(user_id))
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
     user.hashed_password = hash_password(data.new_password)
-    await db.delete(token_record)  # ✅ 成功后立即失效
+
+    # 6️⃣ 成功后删除 token
+    await db.delete(token_record)
     await db.commit()
 
-    return {"msg": "密码重置成功！链接已失效。"}
+    return {"msg": "Password reset successful. Token is now invalid."}
+
+
