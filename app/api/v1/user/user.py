@@ -40,7 +40,7 @@ async def forgot_password(email: str, db: AsyncSession = Depends(get_db)):
     if not user:
         raise HTTPException(status_code=404, detail="Email not found")
     
-    reset_token = create_password_reset_token({"sub": str(user.id)})
+    reset_token = create_password_reset_token({"sub": str(user.id)},expires_minutes=10)
 
     frontend_base = "https://react-test-tan-eight.vercel.app"
     reset_link = f"{frontend_base}/reset_password.html?token={reset_token}"
@@ -49,8 +49,10 @@ async def forgot_password(email: str, db: AsyncSession = Depends(get_db)):
     body = f"""
 Hi,
 
-点击下面链接重置密码：
+您请求了密码重置。请在10分钟内点击下面链接完成操作：
 {reset_link}
+
+如果超过10分钟未使用，链接将失效，需要重新发起重置请求。
 
 如果不是你本人操作，请忽略本邮件。
 """
@@ -58,7 +60,6 @@ Hi,
 
     # 开发模式返回 token 方便前端测试
     return {"msg": f"Password reset link sent to {email}", "test_token": reset_token}
-
 
 @router.post("/reset-password")
 async def reset_password(data: ResetPassword, db: AsyncSession = Depends(get_db)):
