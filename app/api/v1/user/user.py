@@ -81,62 +81,78 @@ Hi,
 
 @router.post("/reset-password")
 async def reset_password(data: ResetPassword, db: AsyncSession = Depends(get_db)):
-    
+    """
+    支持逻辑：
+    1. 链接有效期 10 分钟；
+    2. 失败 3 次后自动失效；
+    3. 成功一次后立即失效；
+    4. 第一次失败提示剩余次数，第二次仅提示错误，第三次不删除 token；
+    """
 
-    # 1️⃣ 验证 token
+    # 1️⃣ 验证 token 签名是否合法
     payload = verify_password_reset_token(data.token)
     if not payload:
-        raise HTTPException(status_code=400, detail="Invalid or expired token")
+        raise HTTPException(status_code=400, detail="无效或过期的链接")
 
+    # 2️⃣ 查找数据库中的 token 记录
     token_record = (await db.execute(
         select(PasswordResetToken).where(PasswordResetToken.token == data.token)
     )).scalar_one_or_none()
 
     if not token_record:
-        raise HTTPException(status_code=400, detail="Invalid or expired token")
-
-    # 2️⃣ 检查失败次数
-    if token_record.failed_attempts >= 3:
-        await db.delete(token_record)
-        await db.commit()
-        raise HTTPException(status_code=400, detail="Link invalid: too many failed attempts")
+        raise HTTPException(status_code=400, detail="无效或已失效的链接")
 
     # 3️⃣ 检查是否过期
     if datetime.utcnow() > token_record.expires_at:
         await db.delete(token_record)
         await db.commit()
-        raise HTTPException(status_code=400, detail="Link expired")
+        raise HTTPException(status_code=400, detail="链接已过期，请重新申请重置")
 
-    # 4️⃣ 验证密码格式: 字母+数字+特殊符号，8-20位
+    # 4️⃣ 检查失败次数
+    if token_record.failed_attempts > 3:
+        await db.delete(token_record)
+        await db.commit()
+        raise HTTPException(status_code=400, detail="连续失败次数过多，链接已失效")
+
+    # 5️⃣ 检查密码格式：字母+数字+特殊符号，8-20位
     pattern = r"^(?=.*[A-Za-z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,20}$"
     if not re.match(pattern, data.new_password):
         token_record.failed_attempts += 1
         await db.commit()
-        remaining = max(0, 3 - token_record.failed_attempts)
-        detail_msg = f"Password format invalid. Remaining attempts: {remaining}"
-        if remaining == 0:
-            detail_msg += ". Link now invalid."
-        raise HTTPException(
-            status_code=400,
-            detail=detail_msg,
-            headers={"X-Failed-Attempts": str(token_record.failed_attempts)}
-        )
 
-    # 5️⃣ 更新密码
+        if token_record.failed_attempts > 3:
+            # 达到 3 次 -> 删除 token
+            await db.delete(token_record)
+            await db.commit()
+            raise HTTPException(status_code=400, detail="连续失败 3 次，链接已失效")
+
+        elif token_record.failed_attempts == 1:
+            raise HTTPException(
+                status_code=400,
+                detail="密码格式错误（剩余 2 次机会）"
+            )
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="密码格式错误（剩余 1 次机会）"
+            )
+
+    # 6️⃣ 获取用户
     user_id = payload if isinstance(payload, str) else payload.get("sub")
     try:
         user_uuid = uuid.UUID(user_id)
     except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid user ID in token")
+        raise HTTPException(status_code=400, detail="Token 内用户ID无效")
 
     user = await db.get(User, user_uuid)
     if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise HTTPException(status_code=404, detail="用户不存在")
 
+    # 7️⃣ 更新密码
     user.hashed_password = hash_password(data.new_password)
 
-    # 6️⃣ 成功后立即失效 token
+    # 8️⃣ 删除 token（重置成功后立即失效）
     await db.delete(token_record)
     await db.commit()
 
-    return {"msg": "密码重置成功！链接已失效。"}
+    return {"msg": "密码重置成功！链接已失效，请重新登录。"}
