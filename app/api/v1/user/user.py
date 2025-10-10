@@ -6,6 +6,11 @@ from app.db.session import get_db
 from app.core.security import create_access_token, create_password_reset_token, verify_password_reset_token
 from app.tasks.email import send_email
 from app.core.security import create_access_token, create_refresh_token
+from app.models.user.password_reset_token import PasswordResetToken
+from datetime import datetime
+from sqlalchemy import select
+from datetime import timedelta
+
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -39,7 +44,18 @@ async def forgot_password(email: str, db: AsyncSession = Depends(get_db)):
     if not user:
         raise HTTPException(status_code=404, detail="Email not found")
     
-    reset_token = create_password_reset_token({"sub": str(user.id)},expires_minutes=10)
+    # 生成 token 并设置过期时间
+    reset_token = create_password_reset_token({"sub": str(user.id)})
+    expires_at = datetime.utcnow() + timedelta(minutes=10)
+
+    # 存储 token
+    token_obj = PasswordResetToken(
+        token=reset_token,
+        user_id=str(user.id),
+        expires_at=expires_at
+    )
+    db.add(token_obj)
+    await db.commit()
 
     frontend_base = "https://react-test-tan-eight.vercel.app"
     reset_link = f"{frontend_base}/reset_password.html?token={reset_token}"
@@ -57,18 +73,42 @@ Hi,
 """
     await send_email(to_email=email, subject=subject, body=body)
 
-    # 开发模式返回 token 方便前端测试
     return {"msg": f"Password reset link sent to {email}", "test_token": reset_token}
 
 
 @router.post("/reset-password")
 async def reset_password(data: ResetPassword, db: AsyncSession = Depends(get_db)):
-    user_id = verify_password_reset_token(data.token)
-    if not user_id:
-        raise HTTPException(status_code=400, detail="Invalid or expired token")
+    # 查询 token
+    result = await db.execute(select(PasswordResetToken).where(PasswordResetToken.token == data.token))
+    token_obj = result.scalars().first()
+    if not token_obj:
+        raise HTTPException(status_code=400, detail="Invalid token")
     
-    updated_user = await update_user_password(db, user_id, data.new_password)
+    # 已使用
+    if token_obj.used:
+        raise HTTPException(status_code=400, detail="Token already used")
+    
+    # 超过10分钟
+    if datetime.utcnow() > token_obj.expires_at:
+        raise HTTPException(status_code=400, detail="Token expired")
+    
+    # 尝试次数
+    if token_obj.attempt_count >= 3:
+        raise HTTPException(status_code=400, detail="Maximum attempts exceeded")
+    
+    # 尝试次数 +1
+    token_obj.attempt_count += 1
+    db.add(token_obj)
+    await db.commit()
+
+    # 重置密码
+    updated_user = await update_user_password(db, token_obj.user_id, data.new_password)
     if not updated_user:
         raise HTTPException(status_code=404, detail="User not found")
-    
+
+    # 成功则立即失效
+    token_obj.used = True
+    db.add(token_obj)
+    await db.commit()
+
     return {"msg": "Password has been reset successfully"}
