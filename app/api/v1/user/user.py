@@ -81,6 +81,11 @@ Hi,
 
 @router.post("/reset-password")
 async def reset_password(data: ResetPassword, db: AsyncSession = Depends(get_db)):
+    # 防止空 token
+    if not data.token or not isinstance(data.token, str) or len(data.token) < 10:
+        raise HTTPException(status_code=400, detail="无效或已失效的链接")
+
+    # 验证 token 签名
     payload = verify_password_reset_token(data.token)
     if not payload:
         raise HTTPException(status_code=400, detail="无效或过期的链接")
@@ -108,18 +113,14 @@ async def reset_password(data: ResetPassword, db: AsyncSession = Depends(get_db)
     pattern = r"^(?=.*[A-Za-z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,20}$"
     if not re.match(pattern, data.new_password):
         token_record.failed_attempts += 1
-        await db.commit()
-        await db.refresh(token_record)  # ✅ 保证同步
-
         if token_record.failed_attempts >= 3:
             await db.delete(token_record)
             await db.commit()
             raise HTTPException(status_code=400, detail="连续失败 3 次，链接已失效")
 
-        if token_record.failed_attempts == 1:
-            raise HTTPException(status_code=400, detail="密码格式错误（剩余 2 次机会）")
-
-        raise HTTPException(status_code=400, detail="密码格式错误（剩余 1 次机会）")
+        await db.commit()
+        remaining = 3 - token_record.failed_attempts
+        raise HTTPException(status_code=400, detail=f"密码格式错误（剩余 {remaining} 次机会）")
 
     # 获取用户
     user_id = payload if isinstance(payload, str) else payload.get("sub")
@@ -132,11 +133,9 @@ async def reset_password(data: ResetPassword, db: AsyncSession = Depends(get_db)
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
 
-    # 更新密码
+    # 更新密码并立即失效
     user.hashed_password = hash_password(data.new_password)
-
-    # 删除 token（成功后失效）
     await db.delete(token_record)
     await db.commit()
 
-    return {"msg": "密码重置成功！链接已失效，请重新登录。"}
+    return {"msg": "✅ 密码重置成功！链接已失效。"}
