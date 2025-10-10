@@ -11,3 +11,4 @@ class PasswordResetToken(Base):
     expires_at = Column(DateTime, nullable=False)
     used = Column(Boolean, default=False)
     attempt_count = Column(Integer, default=0)
+    failed_attempts = Column(Integer, default=0)
