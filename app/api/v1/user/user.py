@@ -13,6 +13,7 @@ from datetime import timedelta
 from app.db.models.user.user import User
 from app.core.security import hash_password
 import re
+import uuid
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -80,7 +81,9 @@ Hi,
 
 @router.post("/reset-password")
 async def reset_password(data: ResetPassword, db: AsyncSession = Depends(get_db)):
-    # 1. 验证 token
+    
+
+    # 1️⃣ 验证 token
     payload = verify_password_reset_token(data.token)
     if not payload:
         raise HTTPException(status_code=400, detail="Invalid or expired token")
@@ -92,38 +95,48 @@ async def reset_password(data: ResetPassword, db: AsyncSession = Depends(get_db)
     if not token_record:
         raise HTTPException(status_code=400, detail="Invalid or expired token")
 
-    # 2. 检查失败次数
+    # 2️⃣ 检查失败次数
     if token_record.failed_attempts >= 3:
         await db.delete(token_record)
         await db.commit()
         raise HTTPException(status_code=400, detail="Link invalid: too many failed attempts")
 
-    # 3. 检查是否过期
+    # 3️⃣ 检查是否过期
     if datetime.utcnow() > token_record.expires_at:
         await db.delete(token_record)
         await db.commit()
         raise HTTPException(status_code=400, detail="Link expired")
 
-    # 4. 验证密码格式: 字母+数字+特殊符号，8-20位
+    # 4️⃣ 验证密码格式: 字母+数字+特殊符号，8-20位
     pattern = r"^(?=.*[A-Za-z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,20}$"
     if not re.match(pattern, data.new_password):
         token_record.failed_attempts += 1
         await db.commit()
         remaining = max(0, 3 - token_record.failed_attempts)
+        detail_msg = f"Password format invalid. Remaining attempts: {remaining}"
+        if remaining == 0:
+            detail_msg += ". Link now invalid."
         raise HTTPException(
             status_code=400,
-            detail=f"Password format invalid. Remaining attempts: {remaining}",
+            detail=detail_msg,
             headers={"X-Failed-Attempts": str(token_record.failed_attempts)}
         )
 
-    # 5. 更新密码
+    # 5️⃣ 更新密码
     user_id = payload if isinstance(payload, str) else payload.get("sub")
-    user = await db.get(User, int(user_id))
+    try:
+        user_uuid = uuid.UUID(user_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid user ID in token")
+
+    user = await db.get(User, user_uuid)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
     user.hashed_password = hash_password(data.new_password)
-    await db.delete(token_record)  # 成功后立即失效
+
+    # 6️⃣ 成功后立即失效 token
+    await db.delete(token_record)
     await db.commit()
 
     return {"msg": "密码重置成功！链接已失效。"}
