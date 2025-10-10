@@ -4,7 +4,7 @@ from app.db.session import engine
 from fastapi import FastAPI
 from app.api.v1.user.user import router as user_router
 from fastapi.middleware.cors import CORSMiddleware
-
+from app.db.models.user.reset_token import PasswordResetToken  # 导入新模型
 
 app = FastAPI()
 
@@ -24,6 +24,11 @@ app.add_middleware(
 )
 
 app.include_router(user_router)
+
+# @app.on_event("startup")
+# async def on_startup():
+#     async with engine.begin() as conn:
+#         await conn.run_sync(Base.metadata.create_all)
 
 @app.on_event("startup")
 async def on_startup():
