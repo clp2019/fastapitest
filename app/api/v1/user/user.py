@@ -7,7 +7,6 @@ from app.core.security import create_access_token, create_password_reset_token, 
 from app.tasks.email import send_email
 from app.core.security import create_access_token, create_refresh_token
 
-
 router = APIRouter(prefix="/users", tags=["users"])
 
 @router.post("/register", response_model=UserOut, status_code=201)
@@ -60,6 +59,7 @@ Hi,
 
     # 开发模式返回 token 方便前端测试
     return {"msg": f"Password reset link sent to {email}", "test_token": reset_token}
+
 
 @router.post("/reset-password")
 async def reset_password(data: ResetPassword, db: AsyncSession = Depends(get_db)):
