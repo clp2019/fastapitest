@@ -11,12 +11,13 @@ app = FastAPI()
 # 允许跨域请求
 origins = [
     "http://127.0.0.1:5500",  # 前端地址
-    "http://localhost:5500"
+    "http://localhost:5500",
+    "https://growing-stacia-lok3wetc-6d9121fc.koyeb.app"
 ]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,       # 允许的源
+    allow_origins=["*"],   # 开发/验证阶段用 *
     allow_credentials=True,
     allow_methods=["*"],         # 允许所有方法 GET, POST...
     allow_headers=["*"],         # 允许所有请求头

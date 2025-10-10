@@ -42,7 +42,7 @@ async def forgot_password(email: str, db: AsyncSession = Depends(get_db)):
     
     reset_token = create_password_reset_token({"sub": str(user.id)})
 
-    frontend_base = "https://react-test-git-main-czs-projects-2eaeea9d.vercel.app/forgot_password_test.html"
+    frontend_base = "https://react-test-tan-eight.vercel.app"
     reset_link = f"{frontend_base}/reset_password.html?token={reset_token}"
 
     subject = "Password Reset Request"
