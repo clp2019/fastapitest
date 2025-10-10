@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException,status
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.schemas.user.user import UserCreate, UserOut, ResetPassword
 from app.crud.user.user import create_user, get_user_by_email, authenticate_user, update_user_password
@@ -10,7 +10,8 @@ from app.db.models.user.reset_token import PasswordResetToken
 from datetime import datetime
 from sqlalchemy import select
 from datetime import timedelta
-
+from app.db.models.user.user import User
+from app.core.security import hash_password
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -78,37 +79,46 @@ Hi,
 
 @router.post("/reset-password")
 async def reset_password(data: ResetPassword, db: AsyncSession = Depends(get_db)):
-    # 查询 token
-    result = await db.execute(select(PasswordResetToken).where(PasswordResetToken.token == data.token))
-    token_obj = result.scalars().first()
-    if not token_obj:
-        raise HTTPException(status_code=400, detail="Invalid token")
-    
-    # 已使用
-    if token_obj.used:
-        raise HTTPException(status_code=400, detail="Token already used")
-    
-    # 超过10分钟
-    if datetime.utcnow() > token_obj.expires_at:
-        raise HTTPException(status_code=400, detail="Token expired")
-    
-    # 尝试次数
-    if token_obj.attempt_count >= 3:
-        raise HTTPException(status_code=400, detail="Maximum attempts exceeded")
-    
-    # 尝试次数 +1
-    token_obj.attempt_count += 1
-    db.add(token_obj)
-    await db.commit()
+    # 1. 验证 token
+    payload = verify_password_reset_token(data.token)
+    if not payload:
+        raise HTTPException(status_code=400, detail="Invalid or expired token")
 
-    # 重置密码
-    updated_user = await update_user_password(db, token_obj.user_id, data.new_password)
-    if not updated_user:
+    token_record = (await db.execute(
+        select(PasswordResetToken).where(PasswordResetToken.token == data.token)
+    )).scalar_one_or_none()
+
+    if not token_record:
+        raise HTTPException(status_code=400, detail="Invalid or expired token")
+
+    # 2. 检查失败次数
+    if token_record.failed_attempts >= 3:
+        # 删除 token
+        await db.delete(token_record)
+        await db.commit()
+        raise HTTPException(status_code=400, detail="Link invalid: too many failed attempts")
+
+    # 3. 检查是否过期
+    if datetime.utcnow() > token_record.expires_at:
+        await db.delete(token_record)
+        await db.commit()
+        raise HTTPException(status_code=400, detail="Link expired")
+
+    # 4. 更新密码（假设 data.new_password 有效）
+    if len(data.new_password) < 8:
+        # 密码太短 -> 失败次数 +1
+        token_record.failed_attempts += 1
+        await db.commit()
+        raise HTTPException(status_code=400, detail="Password too short")
+
+    # 设置新密码
+    user_id = payload.get("sub")
+    user = await db.get(User, int(user_id))
+    if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    # 成功则立即失效
-    token_obj.used = True
-    db.add(token_obj)
+    user.hashed_password = hash_password(data.new_password)
+    await db.delete(token_record)  # ✅ 成功后立即失效
     await db.commit()
 
-    return {"msg": "Password has been reset successfully"}
+    return {"msg": "密码重置成功！链接已失效。"}
