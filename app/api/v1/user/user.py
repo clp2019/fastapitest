@@ -6,7 +6,7 @@ from app.db.session import get_db
 from app.core.security import create_access_token, create_password_reset_token, verify_password_reset_token
 from app.tasks.email import send_email
 from app.core.security import create_access_token, create_refresh_token
-from app.models.user.password_reset_token import PasswordResetToken
+from app.db.models.user.reset_token import PasswordResetToken
 from datetime import datetime
 from sqlalchemy import select
 from datetime import timedelta
