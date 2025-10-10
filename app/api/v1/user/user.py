@@ -12,6 +12,7 @@ from sqlalchemy import select
 from datetime import timedelta
 from app.db.models.user.user import User
 from app.core.security import hash_password
+import re
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -79,11 +80,7 @@ Hi,
 
 @router.post("/reset-password")
 async def reset_password(data: ResetPassword, db: AsyncSession = Depends(get_db)):
-    import re
-    from sqlalchemy import select
-    from datetime import datetime
-
-    # 1️⃣ 验证 token
+    # 1. 验证 token
     payload = verify_password_reset_token(data.token)
     if not payload:
         raise HTTPException(status_code=400, detail="Invalid or expired token")
@@ -95,40 +92,38 @@ async def reset_password(data: ResetPassword, db: AsyncSession = Depends(get_db)
     if not token_record:
         raise HTTPException(status_code=400, detail="Invalid or expired token")
 
-    # 2️⃣ 检查失败次数
+    # 2. 检查失败次数
     if token_record.failed_attempts >= 3:
         await db.delete(token_record)
         await db.commit()
         raise HTTPException(status_code=400, detail="Link invalid: too many failed attempts")
 
-    # 3️⃣ 检查是否过期
+    # 3. 检查是否过期
     if datetime.utcnow() > token_record.expires_at:
         await db.delete(token_record)
         await db.commit()
         raise HTTPException(status_code=400, detail="Link expired")
 
-    # 4️⃣ 检查密码格式
-    password_pattern = re.compile(r"^[A-Za-z]+\d+[A-Za-z]+$")
-    if not password_pattern.match(data.new_password) or len(data.new_password) < 8 or len(data.new_password) > 20:
+    # 4. 验证密码格式: 字母+数字+特殊符号，8-20位
+    pattern = r"^(?=.*[A-Za-z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,20}$"
+    if not re.match(pattern, data.new_password):
         token_record.failed_attempts += 1
         await db.commit()
+        remaining = max(0, 3 - token_record.failed_attempts)
         raise HTTPException(
             status_code=400,
-            detail=f"Password invalid: must be letter+digit+letter, 8-20 chars. Failed attempts: {token_record.failed_attempts}"
+            detail=f"Password format invalid. Remaining attempts: {remaining}",
+            headers={"X-Failed-Attempts": str(token_record.failed_attempts)}
         )
 
-    # 5️⃣ 更新用户密码
+    # 5. 更新密码
     user_id = payload if isinstance(payload, str) else payload.get("sub")
     user = await db.get(User, int(user_id))
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
     user.hashed_password = hash_password(data.new_password)
-
-    # 6️⃣ 成功后删除 token
-    await db.delete(token_record)
+    await db.delete(token_record)  # 成功后立即失效
     await db.commit()
 
-    return {"msg": "Password reset successful. Token is now invalid."}
-
-
+    return {"msg": "密码重置成功！链接已失效。"}
