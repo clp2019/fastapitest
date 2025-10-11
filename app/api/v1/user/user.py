@@ -15,6 +15,10 @@ from app.core.security import hash_password
 import re
 import uuid
 
+# 最大失败次数阈值（达到该值即失效）
+# 允许最多 3 次失败，第 4 次（>=4）立即使链接失效
+MAX_FAILED_ATTEMPTS = 4
+
 router = APIRouter(prefix="/users", tags=["users"])
 
 @router.post("/register", response_model=UserOut, status_code=201)
@@ -103,8 +107,8 @@ async def reset_password(data: ResetPassword, db: AsyncSession = Depends(get_db)
         await db.commit()
         raise HTTPException(status_code=400, detail="链接已过期，请重新申请重置")
 
-    # 检查失败次数：允许最多 3 次失败，超过 3 次（>3）则失效
-    if token_record.failed_attempts > 3:
+    # 检查失败次数：达到或超过阈值则立即失效
+    if (token_record.failed_attempts or 0) >= MAX_FAILED_ATTEMPTS:
         await db.delete(token_record)
         await db.commit()
         raise HTTPException(status_code=400, detail="连续失败次数过多，链接已失效")
@@ -112,18 +116,18 @@ async def reset_password(data: ResetPassword, db: AsyncSession = Depends(get_db)
     # 检查密码格式
     pattern = r"^(?=.*[A-Za-z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,20}$"
     if not re.match(pattern, data.new_password):
-        # 记录一次尝试和一次失败
+        # 记录一次尝试和一次失败（处理 None 情况）
         token_record.attempt_count = (token_record.attempt_count or 0) + 1
         token_record.failed_attempts = (token_record.failed_attempts or 0) + 1
 
-        # 如果失败次数超过 3 次，则删除 token 并拒绝
-        if token_record.failed_attempts > 3:
+        # 如果失败次数达到或超过阈值，则删除 token 并拒绝
+        if token_record.failed_attempts >= MAX_FAILED_ATTEMPTS:
             await db.delete(token_record)
             await db.commit()
             raise HTTPException(status_code=400, detail="连续失败次数过多，链接已失效")
 
         await db.commit()
-        remaining = max(0, 3 - token_record.failed_attempts)
+        remaining = max(0, MAX_FAILED_ATTEMPTS - token_record.failed_attempts)
         raise HTTPException(status_code=400, detail=f"密码格式错误（剩余 {remaining} 次机会）")
 
     # 获取用户
