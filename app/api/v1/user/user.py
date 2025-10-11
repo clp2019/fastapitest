@@ -103,8 +103,8 @@ async def reset_password(data: ResetPassword, db: AsyncSession = Depends(get_db)
         await db.commit()
         raise HTTPException(status_code=400, detail="链接已过期，请重新申请重置")
 
-    # 检查失败次数
-    if token_record.failed_attempts >= 3:
+    # 检查失败次数：允许最多 3 次失败，超过 3 次（>3）则失效
+    if token_record.failed_attempts > 3:
         await db.delete(token_record)
         await db.commit()
         raise HTTPException(status_code=400, detail="连续失败次数过多，链接已失效")
@@ -112,14 +112,18 @@ async def reset_password(data: ResetPassword, db: AsyncSession = Depends(get_db)
     # 检查密码格式
     pattern = r"^(?=.*[A-Za-z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,20}$"
     if not re.match(pattern, data.new_password):
-        token_record.failed_attempts += 1
-        if token_record.failed_attempts >= 3:
+        # 记录一次尝试和一次失败
+        token_record.attempt_count = (token_record.attempt_count or 0) + 1
+        token_record.failed_attempts = (token_record.failed_attempts or 0) + 1
+
+        # 如果失败次数超过 3 次，则删除 token 并拒绝
+        if token_record.failed_attempts > 3:
             await db.delete(token_record)
             await db.commit()
-            raise HTTPException(status_code=400, detail="连续失败 3 次，链接已失效")
+            raise HTTPException(status_code=400, detail="连续失败次数过多，链接已失效")
 
         await db.commit()
-        remaining = 3 - token_record.failed_attempts
+        remaining = max(0, 3 - token_record.failed_attempts)
         raise HTTPException(status_code=400, detail=f"密码格式错误（剩余 {remaining} 次机会）")
 
     # 获取用户
