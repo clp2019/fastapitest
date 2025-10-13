@@ -78,6 +78,15 @@ async def bulk_update(db: AsyncSession, items: List[dict]):
         for k, v in it.items():
             if k == "id":
                 continue
+            if k == "images" and v is None:
+                # 不覆盖原有图片
+                continue
+            if k == "images" and isinstance(v, list):
+                # 自动生成 uploaded_at 时间
+                for img in v:
+                    if img.get("uploaded_at") is None:
+                        from datetime import datetime
+                        img["uploaded_at"] = datetime.utcnow().isoformat()
             if hasattr(obj, k):
                 setattr(obj, k, v)
         db.add(obj)

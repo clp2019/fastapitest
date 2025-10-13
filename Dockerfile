@@ -8,7 +8,7 @@ WORKDIR /app
 # 复制依赖文件
 COPY requirements.txt .
 COPY ./app /app/app
-COPY .env .env
+COPY .env env
 
 # 安装依赖
 RUN pip install --no-cache-dir -r requirements.txt pydantic[email] pydantic-settings python-multipart

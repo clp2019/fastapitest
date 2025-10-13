@@ -14,15 +14,15 @@ class Nutrition(BaseModel):
 
 class ImageMeta(BaseModel):
     url: HttpUrl
-    secure_url: Optional[HttpUrl]
-    public_id: Optional[str]
-    alt: Optional[str]
-    source: Optional[str]
-    uploaded_at: Optional[datetime]
+    secure_url: Optional[HttpUrl] = None
+    public_id: Optional[str] = None
+    alt: Optional[str] = None
+    source: Optional[str] = None
+    uploaded_at: Optional[datetime] = None
 
 class FruitBase(BaseModel):
     name_cn: str
-    images: Optional[List[ImageMeta]] = []
+    images: Optional[List[ImageMeta]] = None
     origin: Optional[List[str]] = []
     season: Optional[List[str]] = []
     nutritional_value: Optional[Nutrition]
