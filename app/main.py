@@ -3,7 +3,7 @@ from app.db.base import Base
 from app.db.session import engine
 from fastapi import FastAPI
 from app.api.v1.user.user import router as user_router
-from app.api.v1.fruit.fruit import router as fruit_router
+from app.api.v1.fruit import router as fruit_router
 from fastapi.middleware.cors import CORSMiddleware
 from app.db.models.user.reset_token import PasswordResetToken  # 导入新模型
 
