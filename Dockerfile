@@ -10,7 +10,7 @@ COPY requirements.txt .
 COPY ./app /app/app
 
 # 安装依赖
-RUN pip install --no-cache-dir -r requirements.txt pydantic[email] pydantic-settings
+RUN pip install --no-cache-dir -r requirements.txt pydantic[email] pydantic-settings python-multipart
 
 
 # 复制项目代码
