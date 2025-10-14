@@ -8,7 +8,7 @@ WORKDIR /app
 # 复制依赖文件
 COPY requirements.txt .
 COPY ./app /app/app
-COPY .env env
+
 
 # 安装依赖
 RUN pip install --no-cache-dir -r requirements.txt pydantic[email] pydantic-settings python-multipart
@@ -21,6 +21,7 @@ COPY . .
 EXPOSE 8000
 
 # 启动 FastAPI
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--loop", "asyncio"]
+
 
 
