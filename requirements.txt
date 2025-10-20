@@ -29,9 +29,14 @@
 # python-multipart>=0.0.20
 # psycopg-binary>=3.2.10
 
+
+
+
+
 fastapi>=0.118.0
 uvicorn[standard]>=0.23.0
-SQLAlchemy[asyncio]>=2.0.43
+SQLAlchemy>=2.0.43
+asyncpg>=0.30.0
 pydantic[email]>=2.5.1
 pydantic-settings>=2.11.0
 passlib[argon2]>=1.7.4
@@ -42,6 +47,4 @@ cloudinary>=1.44.1
 typing-extensions>=4.7.0
 Pillow>=11.3.0
 python-multipart>=0.0.20
-psycopg[binary,pool]>=3.2.10
-
-
+psycopg-binary>=3.2.10
