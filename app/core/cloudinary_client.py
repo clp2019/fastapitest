@@ -15,7 +15,8 @@ def get_cloudinary_config():
         cloud_name = os.getenv("CLOUDINARY_CLOUD_NAME")
         api_key = os.getenv("CLOUDINARY_API_KEY")
         api_secret = os.getenv("CLOUDINARY_API_SECRET")
-    print(f"Cloudinary config: cloud_name={cloud_name}, api_key={api_key}, api_secret={'set' if api_secret else 'missing'}")
+    print(f"✅ Cloudinary configured: cloud_name={cloud_name}, api_key={'set' if api_key else 'missing'}")
+
     cloudinary.config(
         cloud_name=cloud_name,
         api_key=api_key,
